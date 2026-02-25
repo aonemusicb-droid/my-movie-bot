@@ -2,7 +2,7 @@ import telebot
 from supabase import create_client, Client
 
 # --- CONFIGURATION ---
-BOT_TOKEN = '8638140599:AAHVKV85DUO4M666Mrwz9O1eUcN292hc_gE'
+BOT_TOKEN = '8638140599:AAEYiOPrlcBRWZNrLT8CNO_9oi3KMwuQ0XQ'
 SUPABASE_URL = "https://qnduzsrrmuobxqlbjcgs.supabase.co"
 SUPABASE_KEY = "Sb_publishable_jwwUEC4KCOZHVd_oaJm0_g_ejFKyHId"
 
