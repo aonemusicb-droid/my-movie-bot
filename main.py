@@ -3,7 +3,7 @@ import firebase_admin
 from firebase_admin import credentials, db
 
 # --- 1. CONFIGURATION ---
-BOT_TOKEN = '8638140599:AAHOiERyE7hV2nGlWlcfbjCcHuLbBnbitG8'
+BOT_TOKEN = '8639239835:AAFMaP9CodJJyiaJ6dugIRo03sY-kcf-GmY'
 DATABASE_URL = 'https://efootball-market-9e735-default-rtdb.firebaseio.com'
 ADMIN_ID = 123456789 # നിങ്ങളുടെ ടെലിഗ്രാം ഐഡി ഇവിടെ നൽകുക
 
