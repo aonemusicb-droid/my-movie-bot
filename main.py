@@ -4,7 +4,7 @@ import logging
 
 # --- 1. CONFIGURATION ---
 # Replace with your actual credentials if they change
-BOT_TOKEN = '8638140599:AAHVKV85DUO4M666Mrwz9O1eUcN292hc_gE'
+BOT_TOKEN = '8638140599:AAEv8pqLb0Ag-uLtmGo3Yr0uaKebNcw89CA'
 SUPABASE_URL = "https://qnduzsrrmuobxqlbjcgs.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFuZHV6c3JybXVvYnhxbGJqY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5ODY2NTEsImV4cCI6MjA4NzU2MjY1MX0.hkCBL14oYSuBqPsHHAyuHWgbGFo8GAkiCbVThlVA5dg"
 
