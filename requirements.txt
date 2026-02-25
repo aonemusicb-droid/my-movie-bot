@@ -1,4 +1,2 @@
 pyTelegramBotAPI
-pip install supabase
-postgrest
-
+supabase
