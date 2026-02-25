@@ -3,7 +3,7 @@ from supabase import create_client, Client
 
 # --- 1. CONFIGURATION ---
 # Replace with your actual bot token from @BotFather
-BOT_TOKEN = '8639239835:AAFMaP9CodJJyiaJ6dugIRo03sY-kcf-GmY'
+BOT_TOKEN = '8639239835:AAHWk0Rjk0IomZV3BMDF0KgxWS4-jwzQasw'
 
 # Supabase Credentials
 SUPABASE_URL = "https://qnduzsrrmuobxqlbjcgs.supabase.co"
