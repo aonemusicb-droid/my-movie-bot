@@ -3,7 +3,7 @@ import logging
 
 # 1. Configuration
 # Replace with your actual Bot Token
-BOT_TOKEN = '8638140599:AAHVKV85DUO4M666Mrwz9O1eUcN292hc_gE'
+BOT_TOKEN = '8638140599:AAEbgvAkrPfN3F0-b96tK0ZoESWWShmC0x4'
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # 2. Movie Database (Dictionary)
