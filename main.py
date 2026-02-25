@@ -1,47 +1,60 @@
 import telebot
+import firebase_admin
+from firebase_admin import credentials, db
 
-# --- CONFIGURATION ---
-BOT_TOKEN = '8638140599:AAEFmtIRHqvUIEqYV4fIChG8vavTtoyIPzM'
-# നിങ്ങളുടെ ചാനൽ ID (ഉദാ: -1002345678901)
-CHANNEL_ID = -1003728242399
+# --- 1. CONFIGURATION ---
+BOT_TOKEN = '8638140599:AAHVKV85DUO4M666Mrwz9O1eUcN292hc_gE'
+DATABASE_URL = 'https://efootball-market-9e735-default-rtdb.firebaseio.com'
+ADMIN_ID = 123456789 # നിങ്ങളുടെ ടെലിഗ്രാം ഐഡി ഇവിടെ നൽകുക
+
+# --- 2. FIREBASE INITIALIZATION ---
+# പഴയ Error ഒഴിവാക്കാൻ Firebase സെറ്റിംഗ്സ് ശ്രദ്ധിക്കുക
+if not firebase_admin._apps:
+    # serviceAccountKey.json ഫയൽ Render-ൽ ഉണ്ടെന്ന് ഉറപ്പുവരുത്തുക
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred, {'databaseURL': DATABASE_URL})
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ശ്രദ്ധിക്കുക: ഡാറ്റാബേസ് ഇല്ലാതെ ചാനലിലെ എല്ലാ ഫയലുകളും സെർച്ച് ചെയ്യാൻ 
-# ബോട്ടിന് ചാനലിലെ മെസ്സേജുകളുടെ ഒരു ലിസ്റ്റ് ആവശ്യമാണ്.
-# തുടക്കത്തിൽ നമുക്ക് പ്രധാന സിനിമകൾ ഒരു ലിസ്റ്റായി നൽകാം.
+# --- 3. AUTO-INDEXING LOGIC ---
+# നിങ്ങൾ ചാനലിൽ സിനിമ ഇടുമ്പോൾ അത് തനിയെ ഡാറ്റാബേസിൽ സേവ് ചെയ്യും
+@bot.channel_post_handler(content_types=['document', 'video'])
+def auto_index_channel(message):
+    movie_name = message.caption if message.caption else message.document.file_name
+    if movie_name:
+        ref = db.reference('movies')
+        ref.push({
+            'name': movie_name.lower().strip(),
+            'display_name': movie_name,
+            'msg_id': message.message_id,
+            'chat_id': message.chat.id
+        })
+        print(f"✅ Indexed: {movie_name}")
 
-MOVIES = {
-    "sumathi valavu": 10,  # 10 എന്നത് ചാനലിലെ മെസ്സേജ് ID ആണ്
-    "avesham": 12,
-    "manjummel boys": 15
-}
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "Hello! Send me the movie name.")
-
+# --- 4. SEARCH LOGIC ---
 @bot.message_handler(func=lambda message: True)
-def auto_search(message):
+def search_movie(message):
     query = message.text.lower().strip()
-    
-    # യൂസർ അയച്ച പേര് ലിസ്റ്റിൽ ഉണ്ടോ എന്ന് നോക്കുന്നു
-    found = False
-    for name, msg_id in MOVIES.items():
-        if query in name:
-            try:
-                # ചാനലിൽ നിന്ന് നേരിട്ട് ആ ഫയൽ കോപ്പി ചെയ്ത് അയക്കുന്നു
-                bot.copy_message(
-                    chat_id=message.chat.id,
-                    from_chat_id=CHANNEL_ID,
-                    message_id=msg_id
-                )
-                found = True
-                break
-            except Exception as e:
-                print(f"Error: {e}")
+    ref = db.reference('movies')
+    all_movies = ref.get()
 
-    if not found:
-        bot.reply_to(message, "🔍 ചാനലിൽ ആ സിനിമ കണ്ടെത്താനായില്ല!")
+    if all_movies:
+        for key, value in all_movies.items():
+            if query in value['name']:
+                # ചാനലിൽ നിന്ന് നേരിട്ട് കോപ്പി ചെയ്ത് അയക്കുന്നു
+                try:
+                    bot.copy_message(
+                        chat_id=message.chat.id,
+                        from_chat_id=value['chat_id'],
+                        message_id=value['msg_id']
+                    )
+                    return
+                except Exception as e:
+                    bot.reply_to(message, "⚠️ Error: ചാനലിൽ ബോട്ടിനെ അഡ്മിൻ ആക്കിയിട്ടുണ്ടോ?")
+                    return
 
-bot.infinity_polling()
+    bot.reply_to(message, "🔍 ആ സിനിമ കണ്ടെത്താനായില്ല. സ്പെല്ലിംഗ് ശ്രദ്ധിക്കുക!")
+
+if __name__ == "__main__":
+    print("🚀 Auto-Indexing Bot is Live...")
+    bot.infinity_polling()
