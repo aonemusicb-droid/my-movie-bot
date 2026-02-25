@@ -1,60 +1,75 @@
 import telebot
-import firebase_admin
-from firebase_admin import credentials, db
+from supabase import create_client, Client
 
 # --- 1. CONFIGURATION ---
+# Replace with your actual bot token from @BotFather
 BOT_TOKEN = '8639239835:AAFMaP9CodJJyiaJ6dugIRo03sY-kcf-GmY'
-DATABASE_URL = 'https://efootball-market-9e735-default-rtdb.firebaseio.com'
-ADMIN_ID = 123456789 # നിങ്ങളുടെ ടെലിഗ്രാം ഐഡി ഇവിടെ നൽകുക
 
-# --- 2. FIREBASE INITIALIZATION ---
-# പഴയ Error ഒഴിവാക്കാൻ Firebase സെറ്റിംഗ്സ് ശ്രദ്ധിക്കുക
-if not firebase_admin._apps:
-    # serviceAccountKey.json ഫയൽ Render-ൽ ഉണ്ടെന്ന് ഉറപ്പുവരുത്തുക
-    cred = credentials.Certificate("serviceAccountKey.json")
-    firebase_admin.initialize_app(cred, {'databaseURL': DATABASE_URL})
+# Supabase Credentials
+SUPABASE_URL = "https://qnduzsrrmuobxqlbjcgs.supabase.co"
+SUPABASE_KEY = "Sb_publishable_jwwUEC4KCOZHVd_oaJm0_g_ejFKyHId"
 
+# --- 2. INITIALIZATION ---
+# Initialize Supabase Client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Initialize Telegram Bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- 3. AUTO-INDEXING LOGIC ---
-# നിങ്ങൾ ചാനലിൽ സിനിമ ഇടുമ്പോൾ അത് തനിയെ ഡാറ്റാബേസിൽ സേവ് ചെയ്യും
+# --- 3. AUTO-INDEXING (Save movies from channel) ---
 @bot.channel_post_handler(content_types=['document', 'video'])
 def auto_index_channel(message):
-    movie_name = message.caption if message.caption else message.document.file_name
+    movie_name = ""
+    
+    # Extract file name or caption
+    if message.document:
+        movie_name = message.caption if message.caption else message.document.file_name
+    elif message.video:
+        movie_name = message.caption if message.caption else "Unknown Video"
+    
     if movie_name:
-        ref = db.reference('movies')
-        ref.push({
-            'name': movie_name.lower().strip(),
-            'display_name': movie_name,
-            'msg_id': message.message_id,
-            'chat_id': message.chat.id
-        })
-        print(f"✅ Indexed: {movie_name}")
+        data = {
+            "name": movie_name.lower().strip(),
+            "msg_id": message.message_id,
+            "chat_id": message.chat.id
+        }
+        try:
+            # Insert data into Supabase 'movies' table
+            supabase.table("movies").insert(data).execute()
+            print(f"✅ Successfully Indexed: {movie_name}")
+        except Exception as e:
+            print(f"❌ Database Error: {e}")
 
-# --- 4. SEARCH LOGIC ---
+# --- 4. SEARCH LOGIC (Send movies to users) ---
 @bot.message_handler(func=lambda message: True)
 def search_movie(message):
     query = message.text.lower().strip()
-    ref = db.reference('movies')
-    all_movies = ref.get()
-
-    if all_movies:
-        for key, value in all_movies.items():
-            if query in value['name']:
-                # ചാനലിൽ നിന്ന് നേരിട്ട് കോപ്പി ചെയ്ത് അയക്കുന്നു
+    
+    try:
+        # Search for the movie name using partial match (ilike)
+        response = supabase.table("movies").select("*").ilike("name", f"%{query}%").execute()
+        results = response.data
+        
+        if results:
+            for movie in results:
                 try:
+                    # Copy the message from the channel to the user
                     bot.copy_message(
                         chat_id=message.chat.id,
-                        from_chat_id=value['chat_id'],
-                        message_id=value['msg_id']
+                        from_chat_id=movie['chat_id'],
+                        message_id=movie['msg_id']
                     )
-                    return
                 except Exception as e:
-                    bot.reply_to(message, "⚠️ Error: ചാനലിൽ ബോട്ടിനെ അഡ്മിൻ ആക്കിയിട്ടുണ്ടോ?")
-                    return
+                    bot.reply_to(message, "⚠️ Error: Make sure the bot is an Admin in the channel.")
+                    break
+        else:
+            bot.reply_to(message, "🔍 Movie not found! Please check the spelling.")
+            
+    except Exception as e:
+        bot.reply_to(message, "⚠️ Database Error: Ensure the 'movies' table is created correctly.")
+        print(f"Search Error: {e}")
 
-    bot.reply_to(message, "🔍 ആ സിനിമ കണ്ടെത്താനായില്ല. സ്പെല്ലിംഗ് ശ്രദ്ധിക്കുക!")
-
+# --- 5. START THE BOT ---
 if __name__ == "__main__":
-    print("🚀 Auto-Indexing Bot is Live...")
+    print("🚀 Bot is running...")
     bot.infinity_polling()
