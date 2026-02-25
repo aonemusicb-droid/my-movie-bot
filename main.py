@@ -3,7 +3,7 @@ import telebot
 # --- CONFIGURATION ---
 BOT_TOKEN = '8638140599:AAEFmtIRHqvUIEqYV4fIChG8vavTtoyIPzM'
 # നിങ്ങളുടെ ചാനൽ ID (ഉദാ: -1002345678901)
-CHANNEL_ID = -1002345678901 
+CHANNEL_ID = -1003728242399
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
