@@ -1,87 +1,86 @@
-import nest_asyncio
-import asyncio
-import requests
 import os
+import requests
+import io
 import threading
+import asyncio
+import nest_asyncio
 from flask import Flask
-from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 nest_asyncio.apply()
 
-# --- Render-ന് വേണ്ടി Flask ---
+# --- HEALTH CHECK FOR RENDER ---
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return "Bot is Alive!", 200
+def home(): return "AI Image Bot is Running!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host='0.0.0.0', port=port)
 
-# --- CONFIGURATION ---
+# --- BOT CONFIGURATION ---
+# Use your existing credentials
 API_ID = 28300966
 API_HASH = "c0a1fe56b13f260c62bc4838feb416d9"
-BOT_TOKEN = "8427226244:AAHvNhWJb6QZOH2gOa5wFqBaeu2ilp0H3_I"
+BOT_TOKEN = "8427226244:AAG9sDCHxaQm3IcRjzQimz0MTcEmOr_dvd0"
 
-app = Client("InstantMailBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("AIImageGenBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# User session storage
-user_mails = {}
-
-def get_clean_text(html):
-    soup = BeautifulSoup(html, "html.parser")
-    return soup.get_text(separator="\n")
-
-async def check_messages(client, chat_id, user, domain):
-    seen_ids = set()
-    print(f"Checking mail for {user}@{domain}...")
-    
-    while user_mails.get(chat_id) == f"{user}@{domain}":
-        try:
-            url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={user}&domain={domain}"
-            resp = requests.get(url).json()
-            
-            for msg in resp:
-                if msg['id'] not in seen_ids:
-                    seen_ids.add(msg['id'])
-                    # Fetch full content
-                    msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={user}&domain={domain}&id={msg['id']}"
-                    full_msg = requests.get(msg_url).json()
-                    
-                    output = (
-                        f"📬 **New Mail Received!**\n\n"
-                        f"👤 **From:** `{full_msg['from']}`\n"
-                        f"📝 **Subject:** {full_msg['subject']}\n"
-                        f"📅 **Date:** {full_msg['date']}\n\n"
-                        f"📄 **Message:**\n{get_clean_text(full_msg['body'])[:3800]}"
-                    )
-                    await client.send_message(chat_id, output)
-        except:
-            pass
-        await asyncio.sleep(6)
-
+# --- START COMMAND ---
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    btn = InlineKeyboardMarkup([[InlineKeyboardButton("Generate Random Mail 🎲", callback_data="gen")]])
-    await message.reply("Welcome! Click below to get a temporary email address.", reply_markup=btn)
-
-@app.on_callback_query(filters.regex("gen"))
-async def generate(client, query):
-    res = requests.get("https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1").json()
-    email = res[0]
-    user, domain = email.split("@")
-    user_mails[query.from_user.id] = email
-    
-    await query.message.edit_text(
-        f"📧 **Your Temp Email:**\n`{email}`\n\n"
-        "I am monitoring your inbox. You will receive a message here when an email arrives!",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Refresh / New 🔄", callback_data="gen")]])
+    welcome_text = (
+        "🎨 **Welcome to AI Image Generator!**\n\n"
+        "Simply send me a description of what you want to see, and I will create an image for you.\n\n"
+        "**Example:** `A futuristic city in space` or `A cute cat wearing a crown`"
     )
-    asyncio.create_task(check_messages(client, query.from_user.id, user, domain))
+    await message.reply_text(welcome_text)
 
-# Start the bot
+# --- IMAGE GENERATION HANDLER ---
+@app.on_message(filters.text & filters.private)
+async def generate_image(client, message):
+    prompt = message.text
+    
+    # Ignore commands
+    if prompt.startswith("/"):
+        return
+
+    # Inform the user that processing has started
+    status_msg = await message.reply_text("⏳ **Generating your AI art... Please wait.**")
+
+    try:
+        # Constructing the Pollinations AI URL
+        # We encode the prompt to handle spaces and special characters
+        encoded_prompt = prompt.replace(" ", "%20")
+        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed=42&model=flux"
+
+        # Fetch the image
+        response = requests.get(image_url)
+        
+        if response.status_code == 200:
+            # Create a bio-stream for the image
+            photo = io.BytesIO(response.content)
+            photo.name = "ai_image.jpg"
+
+            # Send the photo
+            await message.reply_photo(
+                photo=photo,
+                caption=f"✨ **Result for:** `{prompt}`\n\nGenerated by AI"
+            )
+            # Delete the status message
+            await status_msg.delete()
+        else:
+            await status_msg.edit_text("❌ Sorry, I couldn't generate the image right now. Try again later.")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        await status_msg.edit_text("❌ Something went wrong while generating the image.")
+
+# --- RUN THE BOT ---
 if __name__ == "__main__":
+    # Start Flask in background
     threading.Thread(target=run_flask, daemon=True).start()
-    print("Starting Bot...")
+    
+    print("AI Image Bot is starting...")
     app.run()
