@@ -1,8 +1,5 @@
 pyrogram
 tgcrypto
 requests
-qrcode
-pillow
-beautifulsoup4
-nest_asyncio
 flask
+nest_asyncio
