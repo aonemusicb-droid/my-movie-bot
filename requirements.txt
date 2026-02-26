@@ -4,3 +4,4 @@ requests
 qrcode
 pillow
 beautifulsoup4
+nest_asyncio
