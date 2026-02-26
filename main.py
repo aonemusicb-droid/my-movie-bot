@@ -1,3 +1,4 @@
+import nest_asyncio
 import asyncio
 import requests
 import qrcode
@@ -5,6 +6,9 @@ import io
 from bs4 import BeautifulSoup
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+# Apply nest_asyncio to fix event loop issues in some environments
+nest_asyncio.apply()
 
 # --- YOUR CREDENTIALS ---
 API_ID = 28300966
@@ -19,6 +23,7 @@ DOMAINS = ["1secmail.com", "1secmail.org", "1secmail.net"]
 
 # --- UTILS ---
 def clean_html(raw_html):
+    if not raw_html: return ""
     soup = BeautifulSoup(raw_html, "html.parser")
     return soup.get_text(separator="\n")
 
@@ -52,8 +57,10 @@ async def monitor_inbox(client, chat_id, email):
                         f"📄 **Message Content:**\n{clean_html(full['body'])[:3000]}"
                     )
                     await client.send_message(chat_id, text)
-        except: pass
-        await asyncio.sleep(7)
+        except Exception as e:
+            print(f"Error checking mail: {e}")
+            
+        await asyncio.sleep(8)
 
 # --- COMMANDS ---
 @app.on_message(filters.command("start"))
@@ -119,14 +126,16 @@ async def cb_handler(client, query):
         img = qrcode.make(email); buf = io.BytesIO(); img.save(buf, format='PNG'); buf.seek(0)
         await query.message.reply_photo(buf, caption=f"Scan to copy your email: {email}")
 
-# --- FIX FOR PYTHON 3.11+ ASYNCIO LOOP ISSUE ---
+# --- STARTUP LOGIC ---
 async def main():
-    async with app:
-        print("Bot is running...")
-        await asyncio.Future() # Keeps the bot running forever
+    print("SwiftFakeMailBot is starting...")
+    await app.start()
+    print("Bot is now ONLINE!")
+    await asyncio.Future()  # Keeps the script alive
 
 if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
     try:
-        asyncio.run(main())
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
         pass
