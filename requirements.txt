@@ -1,2 +1,6 @@
-pyTelegramBotAPI
-supabase
+pyrogram
+tgcrypto
+requests
+qrcode
+pillow
+beautifulsoup4
