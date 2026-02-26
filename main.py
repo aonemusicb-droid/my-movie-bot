@@ -26,7 +26,7 @@ def run_flask():
 API_KEY = "7jkmE5NM2VS6GqJ9pzlI"
 API_ID = 28300966
 API_HASH = "c0a1fe56b13f260c62bc4838feb416d9"
-BOT_TOKEN = "8427226244:AAG9sDCHxaQm3IcRjzQimz0MTcEmOr_dvd0"
+BOT_TOKEN = "8427226244:AAFDm0Kip4VnROOzCDO0GWE5cx4nmCGKRQE"
 
 app = Client("SwiftFakeMailBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
