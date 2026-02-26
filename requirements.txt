@@ -5,3 +5,4 @@ qrcode
 pillow
 beautifulsoup4
 nest_asyncio
+flask
