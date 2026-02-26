@@ -1,92 +1,126 @@
-import telebot
-from supabase import create_client, Client
-import logging
+import asyncio
+import requests
+import qrcode
+import io
+from bs4 import BeautifulSoup
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# --- 1. CONFIGURATION ---
-# Replace with your actual credentials if they change
-BOT_TOKEN = '8638140599:AAEosItS-dXfpclsWMMDaycLye0ffSaMB20'
-SUPABASE_URL = "https://qnduzsrrmuobxqlbjcgs.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFuZHV6c3JybXVvYnhxbGJqY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5ODY2NTEsImV4cCI6MjA4NzU2MjY1MX0.hkCBL14oYSuBqPsHHAyuHWgbGFo8GAkiCbVThlVA5dg"
+# --- YOUR CREDENTIALS ---
+API_ID = 28300966
+API_HASH = "c0a1fe56b13f260c62bc4838feb416d9"
+BOT_TOKEN = "8427226244:AAG9sDCHxaQm3IcRjzQimz0MTcEmOr_dvd0"
 
-bot = telebot.TeleBot(BOT_TOKEN)
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+app = Client("SwiftFakeMailBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Enable Logging to track errors in Render/Terminal
-logging.basicConfig(level=logging.INFO)
+# In-memory storage
+user_data = {} 
+DOMAINS = ["1secmail.com", "1secmail.org", "1secmail.net"]
 
-# --- 2. START COMMAND ---
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = (
-        "👋 **Welcome to the Movie Search Bot!**\n\n"
-        "I can help you find movies from the connected channel.\n\n"
-        "🔹 **How to use:** Just type the name of the movie.\n"
-        "🔹 **Note:** I only index new movies uploaded to the channel after I was added as an Admin."
-    )
-    bot.reply_to(message, welcome_text, parse_mode='Markdown')
+# --- UTILS ---
+def clean_html(raw_html):
+    soup = BeautifulSoup(raw_html, "html.parser")
+    return soup.get_text(separator="\n")
 
-# --- 3. AUTO INDEXING (Saves new channel posts to Database) ---
-@bot.channel_post_handler(content_types=['document', 'video'])
-def auto_index(message):
-    try:
-        # Determine the movie name from caption or file name
-        movie_name = ""
-        if message.caption:
-            movie_name = message.caption
-        elif message.document:
-            movie_name = message.document.file_name
-        elif message.video:
-            movie_name = "Unnamed Video File"
-
-        # Prepare data for Supabase
-        data = {
-            "name": movie_name.lower().strip(),
-            "msg_id": message.message_id,
-            "chat_id": message.chat.id
-        }
-        
-        # Insert data into 'movies' table
-        supabase.table("movies").insert(data).execute()
-        logging.info(f"✅ Successfully Indexed: {movie_name}")
-        
-    except Exception as e:
-        logging.error(f"❌ Indexing Error: {e}")
-
-# --- 4. SEARCH LOGIC (Finds movie from Database) ---
-@bot.message_handler(func=lambda message: True)
-def search_movie(message):
-    query = message.text.lower().strip()
-    logging.info(f"User is searching for: {query}")
+async def monitor_inbox(client, chat_id, email):
+    """Background loop to alert user of new mail instantly."""
+    user, domain = email.split("@")
+    seen_ids = set()
     
+    # Initial fetch to ignore old messages
     try:
-        # Fetch all movies from the database
-        response = supabase.table("movies").select("*").execute()
-        movies = response.data
+        init_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={user}&domain={domain}"
+        init_msgs = requests.get(init_url).json()
+        seen_ids = {m['id'] for m in init_msgs}
+    except: pass
 
-        found = False
-        if movies:
-            for movie in movies:
-                # Check if search query exists in movie name
-                if query in movie['name'].lower():
-                    try:
-                        # Copy the message from the channel to the user
-                        bot.copy_message(
-                            chat_id=message.chat.id,
-                            from_chat_id=movie['chat_id'],
-                            message_id=movie['msg_id']
-                        )
-                        found = True
-                    except Exception as e:
-                        logging.error(f"Forwarding Error: {e}")
-
-        if not found:
-            bot.reply_to(message, "🔍 **Movie not found!**\n\nPlease check the spelling or ensure the movie has been uploaded to the channel.")
+    while user_data.get(chat_id, {}).get("email") == email:
+        try:
+            url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={user}&domain={domain}"
+            msgs = requests.get(url).json()
             
-    except Exception as e:
-        bot.reply_to(message, "⚠️ **Database connection error!**\n\nPlease ensure RLS is disabled in Supabase settings.")
-        logging.error(f"Search Error: {e}")
+            for m in msgs:
+                if m['id'] not in seen_ids:
+                    seen_ids.add(m['id'])
+                    # Fetch full content
+                    read_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={user}&domain={domain}&id={m['id']}"
+                    full = requests.get(read_url).json()
+                    
+                    text = (
+                        f"📩 **New Email Received!**\n\n"
+                        f"📧 **To:** `{email}`\n"
+                        f"👤 **From:** {m['from']}\n"
+                        f"📝 **Subject:** {m['subject']}\n\n"
+                        f"📄 **Message Content:**\n{clean_html(full['body'])[:3000]}"
+                    )
+                    await client.send_message(chat_id, text)
+        except: pass
+        await asyncio.sleep(7) # Checks every 7 seconds
 
-# --- 5. RUN THE BOT ---
-if __name__ == "__main__":
-    print("🚀 Bot is running...")
-    bot.infinity_polling(skip_pending=True)
+# --- COMMANDS ---
+@app.on_message(filters.command("start"))
+async def start_cmd(client, message):
+    uid = message.from_user.id
+    if uid not in user_data: user_data[uid] = {"domain": DOMAINS[0]}
+    
+    welcome = (
+        "⚡️ **Swift Fake Mail Bot**\n\n"
+        "Generate disposable email addresses to keep your real inbox safe from spam.\n\n"
+        "• **Auto-Refresh:** Enabled ✅\n"
+        "• **Custom Username:** Just type your desired name (e.g., `myname`) to set it."
+    )
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎲 Random Email", callback_data="gen_rand")],
+        [InlineKeyboardButton("🌐 Switch Domain", callback_data="list_dom")],
+        [InlineKeyboardButton("🖼 Get QR Code", callback_data="qr_gen")]
+    ])
+    await message.reply(welcome, reply_markup=buttons)
+
+@app.on_message(filters.text & filters.private)
+async def handle_custom_name(client, message):
+    uid = message.from_user.id
+    if message.text.startswith("/"): return
+    
+    # Clean the input to keep only alphanumeric characters
+    custom_name = "".join(e for e in message.text if e.isalnum()).lower()
+    if not custom_name:
+        return await message.reply("❌ Invalid name. Please use only letters and numbers.")
+
+    domain = user_data.get(uid, {}).get("domain", DOMAINS[0])
+    email = f"{custom_name}@{domain}"
+    
+    user_data[uid]["email"] = email
+    await message.reply(f"✅ **Email Set To:** `{email}`\n\nI will notify you here as soon as a message arrives! ⏳")
+    asyncio.create_task(monitor_inbox(client, uid, email))
+
+@app.on_callback_query()
+async def cb_handler(client, query):
+    uid = query.from_user.id
+    data = query.data
+
+    if data == "gen_rand":
+        domain = user_data.get(uid, {}).get("domain", DOMAINS[0])
+        res = requests.get("https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1").json()
+        email = res[0].split("@")[0] + "@" + domain
+        user_data[uid]["email"] = email
+        await query.message.edit_text(f"✅ **Generated:** `{email}`\n\nListening for new messages... 📬")
+        asyncio.create_task(monitor_inbox(client, uid, email))
+
+    elif data == "list_dom":
+        btns = [[InlineKeyboardButton(d, callback_data=f"set_{d}")] for d in DOMAINS]
+        await query.message.edit_text("Select a domain extension:", reply_markup=InlineKeyboardMarkup(btns))
+
+    elif data.startswith("set_"):
+        new_d = data.split("_")[1]
+        user_data[uid]["domain"] = new_d
+        await query.answer(f"Domain switched to {new_d}")
+        await start_cmd(client, query.message)
+
+    elif data == "qr_gen":
+        email = user_data.get(uid, {}).get("email")
+        if not email: return await query.answer("Please generate an email first!", show_alert=True)
+        img = qrcode.make(email); buf = io.BytesIO(); img.save(buf, format='PNG'); buf.seek(0)
+        await query.message.reply_photo(buf, caption=f"Scan to copy your email: {email}")
+
+print("Bot is running...")
+app.run()
