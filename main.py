@@ -1,8 +1,6 @@
 import nest_asyncio
 import asyncio
 import requests
-import qrcode
-import io
 import os
 import threading
 from flask import Flask
@@ -12,161 +10,78 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 nest_asyncio.apply()
 
-# --- FLASK SERVER ---
+# --- Render-ന് വേണ്ടി Flask ---
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def health_check():
-    return "SwiftFakeMailBot is active!", 200
+def home(): return "Bot is Alive!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    flask_app.run(host='0.0.0.0', port=port, debug=False)
+    flask_app.run(host='0.0.0.0', port=port)
 
 # --- CONFIGURATION ---
-API_KEY = "7jkmE5NM2VS6GqJ9pzlI"
 API_ID = 28300966
 API_HASH = "c0a1fe56b13f260c62bc4838feb416d9"
-BOT_TOKEN = "8427226244:AAG9sDCHxaQm3IcRjzQimz0MTcEmOr_dvd0"
+BOT_TOKEN = "8427226244:AAHvNhWJb6QZOH2gOa5wFqBaeu2ilp0H3_I"
 
-app = Client("SwiftFakeMailBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("InstantMailBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-user_data = {}
+# User session storage
+user_mails = {}
 
-# --- UTILS ---
-def clean_html(raw_html):
-    if not raw_html: return "No content"
-    soup = BeautifulSoup(raw_html, "html.parser")
+def get_clean_text(html):
+    soup = BeautifulSoup(html, "html.parser")
     return soup.get_text(separator="\n")
 
-async def monitor_inbox(client, chat_id, email):
-    """Improved Monitor for Priyo API"""
+async def check_messages(client, chat_id, user, domain):
     seen_ids = set()
-    print(f"DEBUG: Monitoring started for {email}")
+    print(f"Checking mail for {user}@{domain}...")
     
-    # Initial load to avoid old spam
-    try:
-        url = f"https://free.priyo.email/api/messages/{email}/{API_KEY}"
-        res = requests.get(url).json()
-        if isinstance(res, list):
-            for m in res:
-                seen_ids.add(m.get('id'))
-    except Exception as e:
-        print(f"DEBUG: Initial fetch error: {e}")
-
-    while user_data.get(chat_id, {}).get("email") == email:
+    while user_mails.get(chat_id) == f"{user}@{domain}":
         try:
-            url = f"https://free.priyo.email/api/messages/{email}/{API_KEY}"
-            response = requests.get(url)
+            url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={user}&domain={domain}"
+            resp = requests.get(url).json()
             
-            # API ചിലപ്പോൾ error message അയക്കാം, അത് ഒഴിവാക്കാൻ:
-            if response.status_code != 200:
-                await asyncio.sleep(10)
-                continue
-                
-            msgs = response.json()
-            
-            if isinstance(msgs, list):
-                for m in msgs:
-                    msg_id = m.get('id')
-                    if msg_id and msg_id not in seen_ids:
-                        seen_ids.add(msg_id)
-                        
-                        sender = m.get('sender', 'Unknown')
-                        subject = m.get('subject', 'No Subject')
-                        body = clean_html(m.get('message', 'No content'))
-                        
-                        text = (
-                            f"📩 **New Email Received!**\n\n"
-                            f"📧 **To:** `{email}`\n"
-                            f"👤 **From:** {sender}\n"
-                            f"📝 **Subject:** {subject}\n\n"
-                            f"📄 **Content:**\n{body[:3500]}"
-                        )
-                        
-                        btn = InlineKeyboardMarkup([[InlineKeyboardButton("🗑 Delete", callback_data=f"del_{msg_id}")]])
-                        await client.send_message(chat_id, text, reply_markup=btn)
-            
-            # API rate limit ഒഴിവാക്കാൻ 10 സെക്കന്റ് ഗ്യാപ്പ് നൽകുന്നു
-            await asyncio.sleep(10)
-            
-        except Exception as e:
-            print(f"DEBUG: Loop Error: {e}")
-            await asyncio.sleep(10)
-
-# --- COMMANDS ---
-@app.on_message(filters.command("start"))
-async def start_cmd(client, message):
-    welcome = (
-        "⚡️ **Swift Fake Mail Bot**\n\n"
-        "Your private mailbox is ready. Send any text to set a custom username or click below for a random one."
-    )
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎲 Random Email", callback_data="gen_rand")],
-        [InlineKeyboardButton("🌐 Domains", callback_data="list_dom")],
-        [InlineKeyboardButton("🖼 QR Code", callback_data="qr_gen")]
-    ])
-    await message.reply(welcome, reply_markup=buttons)
-
-@app.on_message(filters.text & filters.private)
-async def handle_custom_name(client, message):
-    uid = message.from_user.id
-    if message.text.startswith("/"): return
-    
-    # Custom name set ചെയ്യുമ്പോൾ ഡൊമൈൻ കൂടി വേണം
-    try:
-        dom_url = f"https://free.priyo.email/api/domains/{API_KEY}"
-        domains = requests.get(dom_url).json()
-        domain = domains[0] if domains else "priyo.email"
-        
-        name = "".join(e for e in message.text if e.isalnum()).lower()
-        email = f"{name}@{domain}"
-        
-        user_data[uid] = {"email": email}
-        await message.reply(f"✅ **Email Set:** `{email}`\nWaiting for messages... 📬")
-        asyncio.create_task(monitor_inbox(client, uid, email))
-    except:
-        await message.reply("❌ Error setting email. Try random.")
-
-@app.on_callback_query()
-async def cb_handler(client, query):
-    uid = query.from_user.id
-    data = query.data
-
-    if data == "gen_rand":
-        try:
-            url = f"https://free.priyo.email/api/random-email/{API_KEY}"
-            res = requests.get(url).json()
-            email = res['email']
-            user_data[uid] = {"email": email}
-            
-            await query.message.edit_text(f"✅ **Generated:** `{email}`\n\nWaiting for messages... 📬")
-            asyncio.create_task(monitor_inbox(client, uid, email))
+            for msg in resp:
+                if msg['id'] not in seen_ids:
+                    seen_ids.add(msg['id'])
+                    # Fetch full content
+                    msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={user}&domain={domain}&id={msg['id']}"
+                    full_msg = requests.get(msg_url).json()
+                    
+                    output = (
+                        f"📬 **New Mail Received!**\n\n"
+                        f"👤 **From:** `{full_msg['from']}`\n"
+                        f"📝 **Subject:** {full_msg['subject']}\n"
+                        f"📅 **Date:** {full_msg['date']}\n\n"
+                        f"📄 **Message:**\n{get_clean_text(full_msg['body'])[:3800]}"
+                    )
+                    await client.send_message(chat_id, output)
         except:
-            await query.answer("API Error. Try again.", show_alert=True)
+            pass
+        await asyncio.sleep(6)
 
-    elif data == "list_dom":
-        try:
-            url = f"https://free.priyo.email/api/domains/{API_KEY}"
-            domains = requests.get(url).json()
-            await query.message.edit_text(f"Available Domains:\n\n" + "\n".join(domains))
-        except: await query.answer("Error")
+@app.on_message(filters.command("start"))
+async def start(client, message):
+    btn = InlineKeyboardMarkup([[InlineKeyboardButton("Generate Random Mail 🎲", callback_data="gen")]])
+    await message.reply("Welcome! Click below to get a temporary email address.", reply_markup=btn)
 
-    elif data.startswith("del_"):
-        msg_id = data.split("_")[1]
-        try:
-            url = f"https://free.priyo.email/api/message/{msg_id}/{API_KEY}"
-            requests.delete(url)
-            await query.answer("Deleted!")
-            await query.message.delete()
-        except: pass
+@app.on_callback_query(filters.regex("gen"))
+async def generate(client, query):
+    res = requests.get("https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1").json()
+    email = res[0]
+    user, domain = email.split("@")
+    user_mails[query.from_user.id] = email
+    
+    await query.message.edit_text(
+        f"📧 **Your Temp Email:**\n`{email}`\n\n"
+        "I am monitoring your inbox. You will receive a message here when an email arrives!",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Refresh / New 🔄", callback_data="gen")]])
+    )
+    asyncio.create_task(check_messages(client, query.from_user.id, user, domain))
 
-# --- MAIN ---
-async def start_bot():
-    threading.Thread(target=run_flask, daemon=True).start()
-    await app.start()
-    print("Bot Started!")
-    await asyncio.Future()
-
+# Start the bot
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_bot())
+    threading.Thread(target=run_flask, daemon=True).start()
+    print("Starting Bot...")
+    app.run()
