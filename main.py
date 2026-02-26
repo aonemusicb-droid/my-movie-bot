@@ -27,7 +27,6 @@ async def monitor_inbox(client, chat_id, email):
     user, domain = email.split("@")
     seen_ids = set()
     
-    # Initial fetch to ignore old messages
     try:
         init_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={user}&domain={domain}"
         init_msgs = requests.get(init_url).json()
@@ -42,7 +41,6 @@ async def monitor_inbox(client, chat_id, email):
             for m in msgs:
                 if m['id'] not in seen_ids:
                     seen_ids.add(m['id'])
-                    # Fetch full content
                     read_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={user}&domain={domain}&id={m['id']}"
                     full = requests.get(read_url).json()
                     
@@ -55,7 +53,7 @@ async def monitor_inbox(client, chat_id, email):
                     )
                     await client.send_message(chat_id, text)
         except: pass
-        await asyncio.sleep(7) # Checks every 7 seconds
+        await asyncio.sleep(7)
 
 # --- COMMANDS ---
 @app.on_message(filters.command("start"))
@@ -81,7 +79,6 @@ async def handle_custom_name(client, message):
     uid = message.from_user.id
     if message.text.startswith("/"): return
     
-    # Clean the input to keep only alphanumeric characters
     custom_name = "".join(e for e in message.text if e.isalnum()).lower()
     if not custom_name:
         return await message.reply("❌ Invalid name. Please use only letters and numbers.")
@@ -122,5 +119,14 @@ async def cb_handler(client, query):
         img = qrcode.make(email); buf = io.BytesIO(); img.save(buf, format='PNG'); buf.seek(0)
         await query.message.reply_photo(buf, caption=f"Scan to copy your email: {email}")
 
-print("Bot is running...")
-app.run()
+# --- FIX FOR PYTHON 3.11+ ASYNCIO LOOP ISSUE ---
+async def main():
+    async with app:
+        print("Bot is running...")
+        await asyncio.Future() # Keeps the bot running forever
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
